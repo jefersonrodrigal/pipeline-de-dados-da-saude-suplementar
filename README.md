@@ -3,7 +3,7 @@
 Pipeline de dados completo — extração, tratamento, qualidade, carga em Microsoft SQL
 Server e aplicação analítica em Streamlit — construído sobre dados **públicos reais**
 da ANS (beneficiários e operadoras) e do CNES/DATASUS (rede de estabelecimentos de
-saúde), com foco no problema de negócio de uma cooperativa do sistema Unimed:
+saúde):
 
 > **Analisar a distribuição da rede de saúde e dos beneficiários por região,
 > identificando concentração, cobertura, evolução histórica e possíveis lacunas de
