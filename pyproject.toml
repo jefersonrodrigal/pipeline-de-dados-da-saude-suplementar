@@ -1,0 +1,88 @@
+[project]
+name = "pipeline-saude-suplementar"
+version = "0.1.0"
+description = "Pipeline de dados da saude suplementar brasileira (ANS/CNES) com carga em SQL Server e aplicacao analitica em Streamlit."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Jeferson Rodrigo Almeida" }]
+
+dependencies = [
+    "pandas>=2.2",
+    "pyarrow>=17.0",
+    "SQLAlchemy>=2.0",
+    "pyodbc>=5.1",
+    "alembic>=1.13",
+    "python-dotenv>=1.0",
+    "streamlit>=1.38",
+    "plotly>=5.24",
+    "requests>=2.32",
+    "tenacity>=9.0",
+    "python-dateutil>=2.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=5.0",
+    "pytest-mock>=3.14",
+    "ruff>=0.7",
+    "black>=24.10",
+    "mypy>=1.13",
+    "types-requests",
+    "jupyter>=1.1",
+    "ipykernel>=6.29",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
+# E501: linhas longas ja tratadas pelo Black.
+# C408: dict(...) e o idioma padrao usado pela API do Plotly (kwargs de
+# layout/marker/etc.) em todo o projeto - manter por legibilidade e
+# consistencia com a documentacao oficial do Plotly, em vez de literais {}.
+ignore = ["E501", "C408"]
+
+[tool.mypy]
+# 3.12 (nao 3.11, o minimo suportado pelo projeto): os stubs mais recentes
+# do numpy usam sintaxe `type X = ...` (PEP 695, exige 3.12+) internamente,
+# e o mypy falha ao PARSEAR esses stubs sob python_version=3.11. Nosso
+# proprio codigo continua compativel com 3.11 (nao usamos sintaxe 3.12+).
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = false
+explicit_package_bases = true
+mypy_path = "."
+exclude = ["tests/", "app/pages/", "notebooks/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "integration: testes que dependem de um SQL Server real (marcados para skip por padrao)",
+]
+
+[tool.coverage.run]
+source = ["src", "app"]
+omit = ["*/__init__.py"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true

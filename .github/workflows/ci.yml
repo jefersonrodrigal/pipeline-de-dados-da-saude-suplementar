@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  # CI valida contra Python 3.12 (LTS, amplamente suportado pelos runners
+  # do GitHub Actions) mesmo o ambiente de desenvolvimento local usando
+  # 3.14 - o pyproject.toml exige apenas >=3.11, entao ambos sao validos.
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  quality:
+    name: Lint, format, type-check e testes unitarios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: Verificar formatacao (Black)
+        run: black --check src app tests
+
+      - name: Lint (Ruff)
+        run: ruff check src app tests
+
+      - name: Checagem de tipos (MyPy)
+        run: mypy src app
+
+      - name: Testes unitarios com cobertura
+        run: pytest tests/unit -v --cov=src --cov=app --cov-report=term-missing --cov-report=xml
+
+      - name: Publicar relatorio de cobertura
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+      - name: Verificar ausencia de segredos expostos
+        run: |
+          if [ -f .env ]; then
+            echo "ERRO: arquivo .env nao deve estar no repositorio!" >&2
+            exit 1
+          fi
+          if git grep -InE "(SQLSERVER_PASSWORD|SQLSERVER_SA_PASSWORD|SQLSERVER_READONLY_PASSWORD)\s*=\s*['\"a-zA-Z0-9]" -- . ':!.env.example' ':!docs' ':!.github'; then
+            echo "ERRO: possivel credencial hardcoded encontrada acima." >&2
+            exit 1
+          fi
+          echo "Nenhum segredo exposto encontrado."
+
+  integration:
+    name: Testes de integracao (SQL Server real)
+    runs-on: ubuntu-latest
+    needs: quality
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "CiTestPassword#2026"
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $MSSQL_SA_PASSWORD -C -Q 'SELECT 1' || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      SQLSERVER_HOST: localhost
+      SQLSERVER_PORT: 1433
+      SQLSERVER_DATABASE: saude_suplementar
+      SQLSERVER_USER: etl_writer
+      SQLSERVER_PASSWORD: "CiEtlWriter#2026"
+      SQLSERVER_READONLY_USER: dashboard_reader
+      SQLSERVER_READONLY_PASSWORD: "CiDashboardReader#2026"
+      SQLSERVER_SA_PASSWORD: "CiTestPassword#2026"
+      SQLSERVER_DRIVER: "ODBC Driver 18 for SQL Server"
+      SQLSERVER_TRUST_CERTIFICATE: "yes"
+      SQLSERVER_ENCRYPT: "yes"
+      SQLSERVER_MIGRATION_AUTH: "sql"
+      SQLSERVER_MIGRATION_USER: "sa"
+      SQLSERVER_MIGRATION_PASSWORD: "CiTestPassword#2026"
+      DEFAULT_REFERENCE_PERIOD: "2024-12"
+      LOG_LEVEL: "INFO"
+      LOG_FORMAT: "json"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Instalar driver ODBC 18 e sqlcmd
+        run: |
+          curl -sSL -o /usr/share/keyrings/microsoft-prod.gpg https://packages.microsoft.com/keys/microsoft.asc
+          curl -sSL https://packages.microsoft.com/config/ubuntu/22.04/prod.list -o /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 mssql-tools18 unixodbc-dev
+
+      - name: Instalar dependencias Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: Criar banco de dados
+        run: |
+          export PATH="$PATH:/opt/mssql-tools18/bin"
+          sqlcmd -S localhost -U sa -P "$SQLSERVER_SA_PASSWORD" -C -i sql/ddl/00_create_database.sql
+
+      - name: Rodar migrations
+        run: python -m alembic upgrade head
+
+      - name: Criar logins e permissoes
+        run: |
+          export PATH="$PATH:/opt/mssql-tools18/bin"
+          sqlcmd -S localhost -U sa -P "$SQLSERVER_SA_PASSWORD" -C -d saude_suplementar \
+            -v EtlWriterPassword="$SQLSERVER_PASSWORD" \
+            -v DashboardReaderPassword="$SQLSERVER_READONLY_PASSWORD" \
+            -i sql/security/01_create_logins.sql
+          sqlcmd -S localhost -U sa -P "$SQLSERVER_SA_PASSWORD" -C -d saude_suplementar \
+            -i sql/security/02_grants.sql
+
+      - name: Testes de integracao e Streamlit
+        run: pytest tests/integration tests/streamlit -v -m integration

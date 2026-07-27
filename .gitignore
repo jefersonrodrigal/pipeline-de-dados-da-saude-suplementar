@@ -1,0 +1,61 @@
+## Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.egg
+
+## Virtual environments
+.venv/
+venv/
+env/
+
+## Environment / secrets
+.env
+.env.*.local
+*.pfx
+*.pem
+
+## Data (never commit real payloads or raw downloads)
+data/raw/**
+!data/raw/**/.gitkeep
+# Excecao deliberada: fixture ficticia do CNES usada para rodar o pipeline
+# de ponta a ponta sem depender de um download manual (ver
+# data/raw/cnes/incoming/README.md). NAO e um dado real baixado.
+!data/raw/cnes/
+!data/raw/cnes/incoming/
+!data/raw/cnes/incoming/README.md
+!data/raw/cnes/incoming/exemplo_estabelecimentos_FICTICIO.csv
+data/trusted/**
+!data/trusted/**/.gitkeep
+data/analytics/**
+!data/analytics/**/.gitkeep
+data/rejected/**
+!data/rejected/**/.gitkeep
+
+## Notebooks
+notebooks/.ipynb_checkpoints/
+
+## Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+.mypy_cache/
+.ruff_cache/
+
+## Logs
+logs/
+*.log
+
+## OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.claude/
+
+## Alembic (keep versions, ignore local sqlite fallback db if any)
+*.db

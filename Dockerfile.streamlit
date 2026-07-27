@@ -1,0 +1,37 @@
+# Imagem da aplicacao Streamlit. Mesma base do pipeline (driver ODBC
+# necessario tambem aqui, pois os repositorios conectam via pyodbc como
+# dashboard_reader).
+FROM python:3.14-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        gnupg2 \
+        unixodbc \
+        unixodbc-dev \
+        gcc \
+    && curl -sSL -o /usr/share/keyrings/microsoft-prod.gpg https://packages.microsoft.com/keys/microsoft.asc \
+    && curl -sSL https://packages.microsoft.com/config/debian/12/prod.list -o /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
+    && apt-get purge -y gnupg2 && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+# curl e mantido (nao purgado) de proposito: usado pelo HEALTHCHECK abaixo.
+
+WORKDIR /app
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ src/
+COPY app/ app/
+
+EXPOSE 8501
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+
+ENTRYPOINT ["streamlit", "run", "app/streamlit_app.py", "--server.address=0.0.0.0"]

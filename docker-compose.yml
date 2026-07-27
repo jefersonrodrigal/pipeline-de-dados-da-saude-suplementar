@@ -1,0 +1,104 @@
+name: pipeline-saude-suplementar
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: saude_suplementar_sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${SQLSERVER_SA_PASSWORD}"
+      MSSQL_PID: "Developer"
+    ports:
+      - "${SQLSERVER_PORT:-1433}:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - saude_suplementar_net
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: saude_suplementar_pipeline
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      SQLSERVER_HOST: sqlserver
+      SQLSERVER_PORT: 1433
+      SQLSERVER_DATABASE: ${SQLSERVER_DATABASE:-saude_suplementar}
+      SQLSERVER_USER: ${SQLSERVER_USER:-etl_writer}
+      SQLSERVER_PASSWORD: ${SQLSERVER_PASSWORD}
+      SQLSERVER_READONLY_USER: ${SQLSERVER_READONLY_USER:-dashboard_reader}
+      SQLSERVER_READONLY_PASSWORD: ${SQLSERVER_READONLY_PASSWORD}
+      SQLSERVER_SA_PASSWORD: ${SQLSERVER_SA_PASSWORD}
+      SQLSERVER_DRIVER: "ODBC Driver 18 for SQL Server"
+      SQLSERVER_TRUST_CERTIFICATE: "yes"
+      SQLSERVER_ENCRYPT: "yes"
+      # Em Docker (Linux) nao ha Windows Auth - migrations/DDL usam sa via
+      # autenticacao SQL (ver docker/entrypoint-pipeline.sh e
+      # src/config/settings.py::MigrationConnection).
+      SQLSERVER_MIGRATION_AUTH: "sql"
+      SQLSERVER_MIGRATION_USER: "sa"
+      SQLSERVER_MIGRATION_PASSWORD: "${SQLSERVER_SA_PASSWORD}"
+      ANS_BENEFICIARIOS_BASE_URL: ${ANS_BENEFICIARIOS_BASE_URL}
+      ANS_BENEFICIARIOS_UFS: ${ANS_BENEFICIARIOS_UFS}
+      ANS_OPERADORAS_URL: ${ANS_OPERADORAS_URL}
+      CNES_DOWNLOAD_URL: ${CNES_DOWNLOAD_URL:-}
+      CNES_MANUAL_INPUT_DIR: data/raw/cnes/incoming
+      DEFAULT_REFERENCE_PERIOD: ${DEFAULT_REFERENCE_PERIOD:-2024-12}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: "json"
+    volumes:
+      - ./data:/app/data
+    networks:
+      - saude_suplementar_net
+    command: ["python", "-m", "src.main", "--stage", "all"]
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: saude_suplementar_streamlit
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      pipeline:
+        condition: service_completed_successfully
+    environment:
+      SQLSERVER_HOST: sqlserver
+      SQLSERVER_PORT: 1433
+      SQLSERVER_DATABASE: ${SQLSERVER_DATABASE:-saude_suplementar}
+      SQLSERVER_USER: ${SQLSERVER_USER:-etl_writer}
+      SQLSERVER_PASSWORD: ${SQLSERVER_PASSWORD}
+      SQLSERVER_READONLY_USER: ${SQLSERVER_READONLY_USER:-dashboard_reader}
+      SQLSERVER_READONLY_PASSWORD: ${SQLSERVER_READONLY_PASSWORD}
+      SQLSERVER_DRIVER: "ODBC Driver 18 for SQL Server"
+      SQLSERVER_TRUST_CERTIFICATE: "yes"
+      SQLSERVER_ENCRYPT: "yes"
+      SQL_QUERY_ROW_LIMIT: ${SQL_QUERY_ROW_LIMIT:-200000}
+      STREAMLIT_SERVER_PORT: 8501
+      STREAMLIT_CACHE_TTL_SECONDS: ${STREAMLIT_CACHE_TTL_SECONDS:-300}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: "json"
+    ports:
+      - "${STREAMLIT_SERVER_PORT:-8501}:8501"
+    networks:
+      - saude_suplementar_net
+
+volumes:
+  sqlserver_data:
+
+networks:
+  saude_suplementar_net:
+    driver: bridge

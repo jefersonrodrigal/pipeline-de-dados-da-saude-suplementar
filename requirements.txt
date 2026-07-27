@@ -1,0 +1,13 @@
+# Dependencias de execucao (pipeline + Streamlit). Para desenvolvimento, use
+# tambem: pip install -e ".[dev]"  (ver pyproject.toml)
+pandas>=2.2
+pyarrow>=17.0
+SQLAlchemy>=2.0
+pyodbc>=5.1
+alembic>=1.13
+python-dotenv>=1.0
+streamlit>=1.38
+plotly>=5.24
+requests>=2.32
+tenacity>=9.0
+python-dateutil>=2.9
